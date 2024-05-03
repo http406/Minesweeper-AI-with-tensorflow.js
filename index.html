@@ -1,11 +1,9 @@
 <!DOCTYPE html>
 <html>
-
 <head>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/0.7.3/p5.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/0.7.3/addons/p5.dom.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/0.7.3/addons/p5.sound.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.7.0"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tensorflow/2.8.0/tf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/addons/p5.dom.js"></script>
   <meta charset="utf-8" />
   <style>
     html,
@@ -34,143 +32,68 @@
     // https://thecodingtrain.com/challenges/71-minesweeper
     // Video: https://youtu.be/LFU5ZlrR21E
 
-    function Cell(i, j, w) {
-      this.i = i;
-      this.j = j;
-      this.x = i * w;
-      this.y = j * w;
-      this.w = w;
-      this.neighborCount = 0;
+    let model;
 
-      this.bee = false;
-      this.revealed = false;
+    async function createModel() {
+      const model = tf.sequential();
+      
+      // Flatten layer to flatten the grid (20x20)
+      model.add(tf.layers.flatten({ inputShape: [20, 20] }));
+
+      // Dense layer with softmax activation
+      model.add(tf.layers.dense({
+        units: 400, // 20x20 flattened grid
+        activation: 'softmax'
+      }));
+
+      // Compile the model
+      model.compile({
+        optimizer: tf.train.sgd(0.01), // Stochastic Gradient Descent with learning rate 0.01
+        loss: 'categoricalCrossentropy',
+        metrics: ['accuracy']
+      });
+
+      return model;
     }
 
-    Cell.prototype.show = function () {
-      stroke(0);
-      noFill();
-      rect(this.x, this.y, this.w, this.w);
-      if (this.revealed) {
-        if (this.bee) {
-          fill(127);
-          ellipse(this.x + this.w * 0.5, this.y + this.w * 0.5, this.w * 0.5);
-        } else {
-          fill(200);
-          rect(this.x, this.y, this.w, this.w);
-          if (this.neighborCount > 0) {
-            textAlign(CENTER);
-            fill(0);
-            text(this.neighborCount, this.x + this.w * 0.5, this.y + this.w - 6);
-          }
-        }
-      }
-    }
+    async function setup() {
+      createCanvas(320, 420); // Adjusted canvas size
 
-    Cell.prototype.countBees = function () {
-      if (this.bee) {
-        this.neighborCount = -1;
-        return;
-      }
-      var total = 0;
-      for (var xoff = -1; xoff <= 1; xoff++) {
-        var i = this.i + xoff;
-        if (i < 0 || i >= cols) continue;
+      // Create the model
+      model = await createModel();
 
-        for (var yoff = -1; yoff <= 1; yoff++) {
-          var j = this.j + yoff;
-          if (j < 0 || j >= rows) continue;
-
-          var neighbor = grid[i][j];
-          if (neighbor.bee) {
-            total++;
-          }
-        }
-      }
-      this.neighborCount = total;
-    }
-
-    Cell.prototype.contains = function (x, y) {
-      return (x > this.x && x < this.x + this.w && y > this.y && y < this.y + this.w);
-    }
-
-    Cell.prototype.reveal = function () {
-      this.revealed = true;
-      if (this.neighborCount == 0) {
-        // flood fill time
-        this.floodFill();
-      }
-    }
-
-    Cell.prototype.floodFill = function () {
-      for (var xoff = -1; xoff <= 1; xoff++) {
-        var i = this.i + xoff;
-        if (i < 0 || i >= cols) continue;
-
-        for (var yoff = -1; yoff <= 1; yoff++) {
-          var j = this.j + yoff;
-          if (j < 0 || j >= rows) continue;
-
-          var neighbor = grid[i][j];
-          // Note the neighbor.bee check was not required.
-          // See issue #184
-          if (!neighbor.revealed) {
-            neighbor.reveal();
-          }
-        }
-      }
-    }
-
-    function make2DArray(cols, rows) {
-      var arr = new Array(cols);
-      for (var i = 0; i < arr.length; i++) {
-        arr[i] = new Array(rows);
-      }
-      return arr;
-    }
-
-    var grid;
-    var cols;
-    var rows;
-    var w = 20;
-
-    var totalBees = 30;
-
-    var currentPlayer = 0;
-
-    function setup() {
-      var canvas = createCanvas(320, 420); // Adjusted canvas size
-      canvas.parent('sketch-holder');
+      // Other setup code...
       cols = floor(width / w);
       rows = floor(height / w);
       grid = make2DArray(cols, rows);
-      for (var i = 0; i < cols; i++) {
-        for (var j = 0; j < rows; j++) {
+      for (let i = 0; i < cols; i++) {
+        for (let j = 0; j < rows; j++) {
           grid[i][j] = new Cell(i, j, w);
         }
       }
 
       // Pick totalBees spots
-      var options = [];
-      for (var i = 0; i < cols; i++) {
-        for (var j = 0; j < rows; j++) {
+      let options = [];
+      for (let i = 0; i < cols; i++) {
+        for (let j = 0; j < rows; j++) {
           options.push([i, j]);
         }
       }
 
 
-      for (var n = 0; n < totalBees; n++) {
-        var index = floor(random(options.length));
-        var choice = options[index];
-        var i = choice[0];
-        var j = choice[1];
+      for (let n = 0; n < totalBees; n++) {
+        let index = floor(random(options.length));
+        let choice = options[index];
+        let i = choice[0];
+        let j = choice[1];
         // Deletes that spot so it's no longer an option
         options.splice(index, 1);
         grid[i][j].bee = true;
       }
 
 
-      for (var i = 0; i < cols; i++) {
-        for (var j = 0; j < rows; j++) {
+      for (let i = 0; i < cols; i++) {
+        for (let j = 0; j < rows; j++) {
           grid[i][j].countBees();
         }
       }
@@ -179,53 +102,152 @@
       setInterval(makeMove, 1000);
       
       // Create Start Again button
-      var button = createButton('Start Again');
+      let button = createButton('Start Again');
       button.position(240, height - 380);
       button.mousePressed(startAgain);
+    }
+
+    // Define other necessary variables and functions for the game...
+    let grid;
+    let cols;
+    let rows;
+    let w = 20;
+
+    let totalBees = 30;
+
+    let currentAImoves = 0;
+
+    // Define the Cell class and its methods...
+    class Cell {
+      constructor(i, j, w) {
+        this.i = i;
+        this.j = j;
+        this.x = i * w;
+        this.y = j * w;
+        this.w = w;
+        this.neighborCount = 0;
+
+        this.bee = false;
+        this.revealed = false;
+      }
+
+      show() {
+        stroke(0);
+        noFill();
+        rect(this.x, this.y, this.w, this.w);
+        if (this.revealed) {
+          if (this.bee) {
+            fill(127);
+            ellipse(this.x + this.w * 0.5, this.y + this.w * 0.5, this.w * 0.5);
+          } else {
+            fill(200);
+            rect(this.x, this.y, this.w, this.w);
+            if (this.neighborCount > 0) {
+              textAlign(CENTER);
+              fill(0);
+              text(this.neighborCount, this.x + this.w * 0.5, this.y + this.w - 6);
+            }
+          }
+        }
+      }
+
+      countBees() {
+        if (this.bee) {
+          this.neighborCount = -1;
+          return;
+        }
+        let total = 0;
+        for (let xoff = -1; xoff <= 1; xoff++) {
+          let i = this.i + xoff;
+          if (i < 0 || i >= cols) continue;
+
+          for (let yoff = -1; yoff <= 1; yoff++) {
+            let j = this.j + yoff;
+            if (j < 0 || j >= rows) continue;
+
+            let neighbor = grid[i][j];
+            if (neighbor.bee) {
+              total++;
+            }
+          }
+        }
+        this.neighborCount = total;
+      }
+
+      contains(x, y) {
+        return (x > this.x && x < this.x + this.w && y > this.y && y < this.y + this.w);
+      }
+
+      reveal() {
+        this.revealed = true;
+        if (this.neighborCount == 0) {
+          // flood fill time
+          this.floodFill();
+        }
+      }
+
+      floodFill() {
+        for (let xoff = -1; xoff <= 1; xoff++) {
+          let i = this.i + xoff;
+          if (i < 0 || i >= cols) continue;
+
+          for (let yoff = -1; yoff <= 1; yoff++) {
+            let j = this.j + yoff;
+            if (j < 0 || j >= rows) continue;
+
+            let neighbor = grid[i][j];
+            // Note the neighbor.bee check was not required.
+            // See issue #184
+            if (!neighbor.revealed) {
+              neighbor.reveal();
+            }
+          }
+        }
+      }
+    }
+
+    function make2DArray(cols, rows) {
+      let arr = new Array(cols);
+      for (let i = 0; i < arr.length; i++) {
+        arr[i] = new Array(rows);
+      }
+      return arr;
     }
 
     function startAgain() {
       // Reset the game
       setup();
-      currentPlayer = 0;
+      currentAImoves = 0;
     }
 
-    async function makeMove() {
-      if (currentPlayer === 0) {
-        // AI 1 makes move
-        const model = await tf.loadLayersModel('model.json'); // Load the pre-trained model
-        const inputData = tf.tensor2d([[...flatten(grid)]]); // Flatten the grid and convert it to tensor
-        const prediction = model.predict(inputData); // Get predictions from the model
-        const move = tf.argMax(prediction, axis=1).dataSync()[0]; // Choose the move with the highest probability
-        const moveX = Math.floor(move / cols);
-        const moveY = move % cols;
-        if (!grid[moveX][moveY].revealed) {
-          grid[moveX][moveY].reveal();
-          if (grid[moveX][moveY].bee) {
+    function makeMove() {
+      if (currentAImoves === 0) {
+        // AI makes move 1
+        let i = floor(random(cols));
+        let j = floor(random(rows));
+        if (!grid[i][j].revealed) {
+          grid[i][j].reveal();
+          if (grid[i][j].bee) {
             gameOver();
           }
         }
       } else {
-        // AI 2 makes move
-        const model = await tf.loadLayersModel('model.json'); // Load the pre-trained model
-        const inputData = tf.tensor2d([[...flatten(grid)]]); // Flatten the grid and convert it to tensor
-        const prediction = model.predict(inputData); // Get predictions from the model
-        const move = tf.argMax(prediction, axis=1).dataSync()[0]; // Choose the move with the highest probability
-        const moveX = Math.floor(move / cols);
-        const moveY = move % cols;
-        if (!grid[moveX][moveY].revealed) {
-          grid[moveX][moveY].reveal();
-          if (grid[moveX][moveY].bee) {
+        // AI makes move 2
+        let i = floor(random(cols));
+        let j = floor(random(rows));
+        if (!grid[i][j].revealed) {
+          grid[i][j].reveal();
+          if (grid[i][j].bee) {
             gameOver();
           }
         }
       }
-      currentPlayer = (currentPlayer + 1) % 2; // Switch player
+      currentAImoves = (currentAImoves + 1) % 2; // Switch moves
     }
 
     function gameOver() {
-      for (var i = 0; i < cols; i++) {
-        for (var j = 0; j < rows; j++) {
+      for (let i = 0; i < cols; i++) {
+        for (let j = 0; j < rows; j++) {
           grid[i][j].revealed = true;
         }
       }
@@ -233,8 +255,8 @@
 
     function draw() {
       background(255);
-      for (var i = 0; i < cols; i++) {
-        for (var j = 0; j < rows; j++) {
+      for (let i = 0; i < cols; i++) {
+        for (let j = 0; j < rows; j++) {
           grid[i][j].show();
         }
       }
@@ -247,12 +269,7 @@
       line(0, 0, 0, height); // Left
       line(width, 0, width, height); // Right
     }
-
-    function flatten(arr) {
-      return arr.reduce((acc, val) => acc.concat(val), []);
-    }
   </script>
   <div id="sketch-holder"></div>
 </body>
-
 </html>

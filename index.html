@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/0.7.3/p5.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/0.7.3/addons/p5.dom.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/0.7.3/addons/p5.sound.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.7.0"></script>
+  <meta charset="utf-8" />
+  <style>
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100%;
+    }
+
+    canvas {
+      display: block;
+      border: 2px solid black; /* Added border */
+    }
+  </style>
+
+</head>
+
+<body>
+  <script>
+    // Daniel Shiffman
+    // The Coding Train
+    // Minesweeper
+    // https://thecodingtrain.com/challenges/71-minesweeper
+    // Video: https://youtu.be/LFU5ZlrR21E
+
+    function Cell(i, j, w) {
+      this.i = i;
+      this.j = j;
+      this.x = i * w;
+      this.y = j * w;
+      this.w = w;
+      this.neighborCount = 0;
+
+      this.bee = false;
+      this.revealed = false;
+    }
+
+    Cell.prototype.show = function () {
+      stroke(0);
+      noFill();
+      rect(this.x, this.y, this.w, this.w);
+      if (this.revealed) {
+        if (this.bee) {
+          fill(127);
+          ellipse(this.x + this.w * 0.5, this.y + this.w * 0.5, this.w * 0.5);
+        } else {
+          fill(200);
+          rect(this.x, this.y, this.w, this.w);
+          if (this.neighborCount > 0) {
+            textAlign(CENTER);
+            fill(0);
+            text(this.neighborCount, this.x + this.w * 0.5, this.y + this.w - 6);
+          }
+        }
+      }
+    }
+
+    Cell.prototype.countBees = function () {
+      if (this.bee) {
+        this.neighborCount = -1;
+        return;
+      }
+      var total = 0;
+      for (var xoff = -1; xoff <= 1; xoff++) {
+        var i = this.i + xoff;
+        if (i < 0 || i >= cols) continue;
+
+        for (var yoff = -1; yoff <= 1; yoff++) {
+          var j = this.j + yoff;
+          if (j < 0 || j >= rows) continue;
+
+          var neighbor = grid[i][j];
+          if (neighbor.bee) {
+            total++;
+          }
+        }
+      }
+      this.neighborCount = total;
+    }
+
+    Cell.prototype.contains = function (x, y) {
+      return (x > this.x && x < this.x + this.w && y > this.y && y < this.y + this.w);
+    }
+
+    Cell.prototype.reveal = function () {
+      this.revealed = true;
+      if (this.neighborCount == 0) {
+        // flood fill time
+        this.floodFill();
+      }
+    }
+
+    Cell.prototype.floodFill = function () {
+      for (var xoff = -1; xoff <= 1; xoff++) {
+        var i = this.i + xoff;
+        if (i < 0 || i >= cols) continue;
+
+        for (var yoff = -1; yoff <= 1; yoff++) {
+          var j = this.j + yoff;
+          if (j < 0 || j >= rows) continue;
+
+          var neighbor = grid[i][j];
+          // Note the neighbor.bee check was not required.
+          // See issue #184
+          if (!neighbor.revealed) {
+            neighbor.reveal();
+          }
+        }
+      }
+    }
+
+    function make2DArray(cols, rows) {
+      var arr = new Array(cols);
+      for (var i = 0; i < arr.length; i++) {
+        arr[i] = new Array(rows);
+      }
+      return arr;
+    }
+
+    var grid;
+    var cols;
+    var rows;
+    var w = 20;
+
+    var totalBees = 30;
+
+    var currentPlayer = 0;
+
+    function setup() {
+      var canvas = createCanvas(320, 420); // Adjusted canvas size
+      canvas.parent('sketch-holder');
+      cols = floor(width / w);
+      rows = floor(height / w);
+      grid = make2DArray(cols, rows);
+      for (var i = 0; i < cols; i++) {
+        for (var j = 0; j < rows; j++) {
+          grid[i][j] = new Cell(i, j, w);
+        }
+      }
+
+      // Pick totalBees spots
+      var options = [];
+      for (var i = 0; i < cols; i++) {
+        for (var j = 0; j < rows; j++) {
+          options.push([i, j]);
+        }
+      }
+
+
+      for (var n = 0; n < totalBees; n++) {
+        var index = floor(random(options.length));
+        var choice = options[index];
+        var i = choice[0];
+        var j = choice[1];
+        // Deletes that spot so it's no longer an option
+        options.splice(index, 1);
+        grid[i][j].bee = true;
+      }
+
+
+      for (var i = 0; i < cols; i++) {
+        for (var j = 0; j < rows; j++) {
+          grid[i][j].countBees();
+        }
+      }
+
+      // Set interval for making moves automatically
+      setInterval(makeMove, 1000);
+      
+      // Create Start Again button
+      var button = createButton('Start Again');
+      button.position(240, height - 380);
+      button.mousePressed(startAgain);
+    }
+
+    function startAgain() {
+      // Reset the game
+      setup();
+      currentPlayer = 0;
+    }
+
+    async function makeMove() {
+      if (currentPlayer === 0) {
+        // AI 1 makes move
+        const model = await tf.loadLayersModel('model.json'); // Load the pre-trained model
+        const inputData = tf.tensor2d([[...flatten(grid)]]); // Flatten the grid and convert it to tensor
+        const prediction = model.predict(inputData); // Get predictions from the model
+        const move = tf.argMax(prediction, axis=1).dataSync()[0]; // Choose the move with the highest probability
+        const moveX = Math.floor(move / cols);
+        const moveY = move % cols;
+        if (!grid[moveX][moveY].revealed) {
+          grid[moveX][moveY].reveal();
+          if (grid[moveX][moveY].bee) {
+            gameOver();
+          }
+        }
+      } else {
+        // AI 2 makes move
+        const model = await tf.loadLayersModel('model.json'); // Load the pre-trained model
+        const inputData = tf.tensor2d([[...flatten(grid)]]); // Flatten the grid and convert it to tensor
+        const prediction = model.predict(inputData); // Get predictions from the model
+        const move = tf.argMax(prediction, axis=1).dataSync()[0]; // Choose the move with the highest probability
+        const moveX = Math.floor(move / cols);
+        const moveY = move % cols;
+        if (!grid[moveX][moveY].revealed) {
+          grid[moveX][moveY].reveal();
+          if (grid[moveX][moveY].bee) {
+            gameOver();
+          }
+        }
+      }
+      currentPlayer = (currentPlayer + 1) % 2; // Switch player
+    }
+
+    function gameOver() {
+      for (var i = 0; i < cols; i++) {
+        for (var j = 0; j < rows; j++) {
+          grid[i][j].revealed = true;
+        }
+      }
+    }
+
+    function draw() {
+      background(255);
+      for (var i = 0; i < cols; i++) {
+        for (var j = 0; j < rows; j++) {
+          grid[i][j].show();
+        }
+      }
+      
+      // Draw vertical and horizontal lines to enclose the grid
+      stroke(0);
+      strokeWeight(1);
+      line(0, 0, width, 0); // Top
+      line(0, height, width, height); // Bottom
+      line(0, 0, 0, height); // Left
+      line(width, 0, width, height); // Right
+    }
+
+    function flatten(arr) {
+      return arr.reduce((acc, val) => acc.concat(val), []);
+    }
+  </script>
+  <div id="sketch-holder"></div>
+</body>
+
+</html>
